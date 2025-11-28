@@ -15,11 +15,12 @@ from torchvision import transforms
 def get_augmentations():
     return [
         transforms.Compose([]),  # Identity (no augmentation)
-        transforms.Compose([transforms.RandomRotation(degrees=30)]),
-        transforms.Compose([transforms.GaussianBlur(kernel_size=5)]),
-        transforms.Compose([transforms.ColorJitter(brightness=0.3, contrast=0.3)]),
-        transforms.Compose([transforms.RandomHorizontalFlip(p=1.0)]),
-        transforms.Compose([transforms.RandomVerticalFlip(p=1.0)]),
+        transforms.Compose([transforms.RandomRotation(degrees=90)]),
+        transforms.Compose([transforms.GaussianBlur(kernel_size=11, sigma=(2.0, 5.0))]),
+        transforms.Compose([transforms.ColorJitter(brightness=0.7, contrast=0.7, saturation=0.7, hue=0.2)]),
+        transforms.Compose([transforms.RandomAffine(degrees=60, translate=(0.2, 0.2), scale=(0.7, 1.3), shear=30)]),
+        transforms.Compose([transforms.RandomPerspective(distortion_scale=0.7, p=1.0)]),
+        transforms.Compose([transforms.RandomInvert(p=1.0)]),
     ]
 
 # Utility to load EmojySVG dataset from a directory structure with PNG and SVG files
@@ -39,8 +40,7 @@ def load_emojysvg_dataset(data_dir, max_curves=128, max_paths_per_curve=16, view
                 continue
             # Load image
             img = Image.open(img_path).convert('RGB').resize((viewbox_size, viewbox_size))
-            img_np = np.array(img) / 255.
-            img_tensor = torch.tensor(img_np, dtype=torch.float32)
+            img_tensor = torch.from_numpy(np.array(img)).float() / 255.0  # [H, W, 3], RGB
             # Load SVG and canonicalize
             with open(svg_path, 'r') as f:
                 try:
@@ -50,9 +50,9 @@ def load_emojysvg_dataset(data_dir, max_curves=128, max_paths_per_curve=16, view
                     bez, mask = None, None
             # Apply augmentations
             for aug in augmentations:
-                # torchvision transforms expect PIL images, so convert back and forth
                 aug_img = aug(img)
-                aug_img_tensor = torch.tensor(np.array(aug_img)/255., dtype=torch.float32)
+                aug_img_np = np.array(aug_img)  # Ensure still RGB, shape [H, W, 3]
+                aug_img_tensor = torch.from_numpy(aug_img_np).float() / 255.0
                 items.append({
                     'ground_truth_image': img_tensor,  # always original
                     'image': aug_img_tensor,

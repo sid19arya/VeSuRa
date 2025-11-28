@@ -46,7 +46,7 @@ def train_one_epoch(model, dataloader, optimizer, device, lambda_svg=0.5, lambda
 
     # pbar = tqdm(dataloader, desc="train")
     for batch in dataloader:
-        inp = batch["ground_truth_image"].to(device)
+        inp = batch["image"].to(device)
         clean = batch["ground_truth_image"].to(device)
         gt_svg = batch["svg_params"].to(device)
         gt_mask = batch["svg_mask"].to(device)
@@ -96,7 +96,7 @@ def validate_one_epoch(model, dataloader, device,
     lr, lm, lv = 0.0, 0.0, 0.0
 
     for batch in dataloader:
-        inp = batch["ground_truth_image"].to(device)
+        inp = batch["image"].to(device)
         clean = batch["ground_truth_image"].to(device)
         gt_svg = batch["svg_params"].to(device)
         gt_mask = batch["svg_mask"].to(device)
