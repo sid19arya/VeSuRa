@@ -162,3 +162,51 @@ def canonicalize_svg(svg_string: str, max_paths: int, max_curves_per_path: int,
     tensor, mask = subpaths_to_tensor(subpaths, max_paths, max_curves_per_path, viewbox_size)
     tensor = tensor / viewbox_size # Normalize to [0,1]
     return tensor, mask
+
+def tensor_to_svg_string(tensor: np.ndarray, mask: np.ndarray,
+                         width: int=128, height: int=128, stroke_width: int=1):
+    """
+    Convert (max_paths, max_curves_per_path, 4,2) tensor back to SVG.
+    mask: indicates valid curves per path
+    """
+    svg_paths = []
+    max_paths, max_curves, _, _ = tensor.shape
+    tensor = tensor * width
+
+    for i in range(max_paths):
+
+        indices = np.where(mask[i] > 0.5)[0]
+        if len(indices) == 0:
+            continue
+
+        # collect commands for this specific path
+        parts = []
+
+        # Move to first curve start
+        first_j = indices[0]
+        p0 = tensor[i, first_j, 0]
+        parts.append(f"M {p0[0]:.2f} {p0[1]:.2f}")
+
+        # Emit curves
+        for j in indices:
+            p0 = tensor[i, j, 0]
+            c1 = tensor[i, j, 1]
+            c2 = tensor[i, j, 2]
+            p3 = tensor[i, j, 3]
+            parts.append(
+                f"C {c1[0]:.2f} {c1[1]:.2f}, "
+                f"{c2[0]:.2f} {c2[1]:.2f}, "
+                f"{p3[0]:.2f} {p3[1]:.2f}"
+            )
+
+        d_i = " ".join(parts)
+        svg_paths.append(
+            f'  <path d="{d_i}" fill="none" stroke="black" stroke-width="{stroke_width}"/>'
+        )
+
+    # wrap with full SVG
+    svg = f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}">\n'
+    svg += "\n".join(svg_paths)
+    svg += "\n</svg>"
+
+    return svg
