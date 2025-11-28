@@ -16,7 +16,7 @@ def hybrid_loss(pred_raster, gt_raster,
     """
 
     # 1. Raster Loss
-    loss_r = F.l1_loss(pred_raster,gt_raster)
+    loss_r = F.mse_loss(pred_raster,gt_raster)
 
     # 2. Mask Loss (BCE)
     loss_m = F.binary_cross_entropy_with_logits(pred_mask_logits, gt_mask)
