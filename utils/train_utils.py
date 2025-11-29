@@ -39,7 +39,7 @@ def hybrid_loss(pred_raster, gt_raster,
 
     return total_loss, loss_r.detach(), loss_m.detach(), loss_v.detach()
 
-def train_one_epoch(model, dataloader, optimizer, device, lambda_svg=0.5, lambda_mask=0.5, lambda_raster=0.5, verbose=False):
+def train_one_epoch(model, dataloader, optimizer, device, lambda_svg=0.5, lambda_mask=0.5, lambda_raster=0.5):
     model.train()
     total_loss = 0.0
     lr, lm, lv = 0.0, 0.0, 0.0
@@ -80,13 +80,8 @@ def train_one_epoch(model, dataloader, optimizer, device, lambda_svg=0.5, lambda
     #     "m": f"{lm:.3f}",
     #     "v": f"{lv:.3f}"
     # })
-    if verbose:
-      print(f"""
-          epoch: loss: f{total_loss / len(dataloader):.4f}, r: f{lr:.4f}, m: {lm:4f}, v: f{lv:.4f}
-            """
-        )
 
-    return total_loss / len(dataloader)
+    return total_loss / len(dataloader), lr, lm, lv
 
 @torch.no_grad()
 def validate_one_epoch(model, dataloader, device,
