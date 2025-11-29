@@ -204,6 +204,9 @@ def tensor_to_svg_string(tensor: np.ndarray, mask: np.ndarray,
         fill_r = tensor[i, max_curves, 0, 0]
         fill_g = tensor[i, max_curves, 1, 0]
         fill_b = tensor[i, max_curves, 2, 0]
+        fill_r = np.clip(fill_r, 0, 1)
+        fill_g = np.clip(fill_g, 0, 1)
+        fill_b = np.clip(fill_b, 0, 1)
         fill_hex = f"#{int(fill_r*255):02x}{int(fill_g*255):02x}{int(fill_b*255):02x}"
 
         parts = []

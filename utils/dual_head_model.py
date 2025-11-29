@@ -52,7 +52,8 @@ class TransformerSVGNetSmall(nn.Module):
         # Transformer encoder
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=d_model, nhead=nhead,
-            dim_feedforward=d_model*2, activation='gelu'
+            dim_feedforward=d_model*2, activation='gelu',
+            dropout=0.1
         )
         self.transformer_encoder = nn.TransformerEncoder(
             encoder_layer, num_layers=num_encoder_layers
@@ -64,7 +65,8 @@ class TransformerSVGNetSmall(nn.Module):
 
         decoder_layer = nn.TransformerDecoderLayer(
             d_model=d_model, nhead=nhead,
-            dim_feedforward=d_model*2, activation='gelu'
+            dim_feedforward=d_model*2, activation='gelu',
+            dropout=0.1
         )
         self.transformer_decoder = nn.TransformerDecoder(
             decoder_layer, num_layers=num_decoder_layers
@@ -75,6 +77,7 @@ class TransformerSVGNetSmall(nn.Module):
         self.coord_head = nn.Sequential(
           nn.Linear(d_model, d_model//2),
           nn.ReLU(),
+          nn.Dropout(0.1),
           nn.Linear(d_model//2, 8)
         )
 
@@ -82,6 +85,7 @@ class TransformerSVGNetSmall(nn.Module):
         self.mask_head = nn.Sequential(
             nn.Linear(d_model, d_model//2),
             nn.ReLU(),
+            nn.Dropout(0.1),
             nn.Linear(d_model//2, 1)
         )
 
@@ -89,6 +93,9 @@ class TransformerSVGNetSmall(nn.Module):
         self.global_pool = nn.AdaptiveAvgPool2d(1)
         self.fc_mu = nn.Linear(512, latent_dim)
         self.fc_dec = nn.Linear(latent_dim, 256*4*4)
+
+        self.dropout_latent = nn.Dropout(0.1)
+
 
         self.raster_decoder = nn.Sequential(
             nn.ConvTranspose2d(256, 128, 4, 2, 1), nn.BatchNorm2d(128), nn.ReLU(),
@@ -119,6 +126,7 @@ class TransformerSVGNetSmall(nn.Module):
 
         pooled = self.global_pool(feat).view(B, -1)
         z = self.fc_mu(pooled)
+        z = self.dropout_latent(z)
         z_spatial = self.fc_dec(z).view(B, 256, 4, 4)
         raster = self.raster_decoder(z_spatial)
 

@@ -70,6 +70,7 @@ def train_one_epoch(model, dataloader, optimizer, device, lambda_svg=0.5, lambda
         lv += lv_.item()
 
         loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
 
         total_loss += loss.item()
