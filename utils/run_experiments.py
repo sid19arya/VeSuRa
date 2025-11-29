@@ -86,7 +86,7 @@ def execute_run(model, optimizer, train_loader, test_loader, run, config, device
 
     return train_losses, val_losses
 
-def log_artifacts(model, run, test_set):
+def log_artifacts(model, run, test_set, device):
     imgs = []
     true_images = []
     for idx in range(0, 10):
