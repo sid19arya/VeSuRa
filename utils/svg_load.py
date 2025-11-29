@@ -1,4 +1,4 @@
-from svgpathtools import svg2paths, Path as SVGPath, CubicBezier, Line, QuadraticBezier, Arc
+# from svgpathtools import svg2paths, Path as SVGPath, CubicBezier, Line, QuadraticBezier, Arc
 import svgelements
 import numpy as np
 import os
@@ -82,12 +82,12 @@ def segment_to_cubics(seg) -> List[Tuple[complex, complex, complex, complex]]:
 # ----------------------------
 # 2) Extract subpaths as cubics
 # ----------------------------
-def svg_string_to_subpath_cubics(svg_string: str) -> List[List[Tuple[complex, complex, complex, complex]]]:
+def svg_string_to_subpath_cubics(svg_string: str) -> List[Tuple[List[Tuple[complex, complex, complex, complex]], Tuple[float, float, float]]]:
     """
     Parses SVG string using svgelements to handle Group Transforms and Absolute Positioning.
-    Returns a list of subpaths, where each subpath is a list of cubic tuples.
+    Returns a list of (subpath, fill_rgb), where each subpath is a list of cubic tuples,
+    and fill_rgb is a tuple (r,g,b) in [0,1].
     """
-    # svgelements.SVG.parse automatically handles the hierarchy, groups, and transforms.
     svg = svgelements.SVG.parse(svg_string)
 
     all_subpaths = []
@@ -99,12 +99,24 @@ def svg_string_to_subpath_cubics(svg_string: str) -> List[List[Tuple[complex, co
             # The points in these segments are ALREADY transformed to screen space.
 
             current_subpath = []
+            # Extract fill color
+            fill = getattr(element, 'fill', None)
+            if fill is None or fill == 'none':
+                fill_rgb = (0.0, 0.0, 0.0)
+            elif isinstance(fill, str):
+                fill_rgb = hex_to_rgb(fill)
+            else:
+                # svgelements.Color object
+                try:
+                    fill_rgb = (fill.red / 255.0, fill.green / 255.0, fill.blue / 255.0)
+                except Exception:
+                    fill_rgb = (0.0, 0.0, 0.0)
 
             for seg in element:
                 # Check if we hit a Move (new subpath)
                 if isinstance(seg, svgelements.Move):
                     if current_subpath:
-                        all_subpaths.append(current_subpath)
+                        all_subpaths.append((current_subpath, fill_rgb))
                     current_subpath = []
                     continue
 
@@ -114,25 +126,25 @@ def svg_string_to_subpath_cubics(svg_string: str) -> List[List[Tuple[complex, co
 
             # Append the final subpath if it exists
             if current_subpath:
-                all_subpaths.append(current_subpath)
+                all_subpaths.append((current_subpath, fill_rgb))
 
     return all_subpaths
 
 # ----------------------------
 # 3) Convert subpaths to tensor
 # ----------------------------
-def subpaths_to_tensor(subpaths: List[List[Tuple[complex, complex, complex, complex]]],
+def subpaths_to_tensor(subpaths: List[Tuple[List[Tuple[complex, complex, complex, complex]], Tuple[float, float, float]]],
                        max_paths: int, max_curves_per_path: int,
                        viewbox_size: int):
     """
     Returns:
-        arr: (max_paths, max_curves_per_path, 4, 2)
-        mask: (max_paths, max_curves_per_path) -> 1 for valid curves, 0 for padding
+        arr: (max_paths, max_curves_per_path+1, 4, 2)
+        mask: (max_paths, max_curves_per_path+1) -> 1 for valid curves, 0 for padding
     """
-    arr = np.zeros((max_paths, max_curves_per_path, 4, 2), dtype=np.float32)
-    mask = np.zeros((max_paths, max_curves_per_path), dtype=np.float32)
+    arr = np.zeros((max_paths, max_curves_per_path+1, 4, 2), dtype=np.float32)
+    mask = np.zeros((max_paths, max_curves_per_path+1), dtype=np.float32)
 
-    for i, path in enumerate(subpaths[:max_paths]):
+    for i, (path, fill_rgb) in enumerate(subpaths[:max_paths]):
         n_curves = min(len(path), max_curves_per_path)
         for j in range(n_curves):
             p0, c1, c2, p3 = path[j]
@@ -142,17 +154,24 @@ def subpaths_to_tensor(subpaths: List[List[Tuple[complex, complex, complex, comp
             arr[i,j,3,0] = p3.real; arr[i,j,3,1] = p3.imag
             mask[i,j] = 1.0
 
-    # Compute global bounding box across all subpaths
-    all_points = arr[mask==1].reshape(-1,2)
-    xs, ys = all_points[:,0], all_points[:,1]
-    xmin, xmax = xs.min(), xs.max()
-    ymin, ymax = ys.min(), ys.max()
-    if xmax - xmin < 1e-6: xmax = xmin + 1.0
-    if ymax - ymin < 1e-6: ymax = ymin + 1.0
+        # Store fill color in the last "curve"
+        arr[i, max_curves_per_path, 0, 0] = fill_rgb[0]
+        arr[i, max_curves_per_path, 1, 0] = fill_rgb[1]
+        arr[i, max_curves_per_path, 2, 0] = fill_rgb[2]
+        # The rest remain zero
+        mask[i, max_curves_per_path] = 1.0
 
-    # Normalize to viewbox_size
-    arr[:,:,:,0] = (arr[:,:,:,0]-xmin)/(xmax-xmin) * viewbox_size
-    arr[:,:,:,1] = (arr[:,:,:,1]-ymin)/(ymax-ymin) * viewbox_size
+    # Compute global bounding box across all subpaths (excluding fill row)
+    valid = mask[:,:max_curves_per_path]==1
+    all_points = arr[:,:max_curves_per_path][valid].reshape(-1,2)
+    if all_points.shape[0] > 0:
+        xs, ys = all_points[:,0], all_points[:,1]
+        xmin, xmax = xs.min(), xs.max()
+        ymin, ymax = ys.min(), ys.max()
+        if xmax - xmin < 1e-6: xmax = xmin + 1.0
+        if ymax - ymin < 1e-6: ymax = ymin + 1.0
+        arr[:,:max_curves_per_path,:,0] = (arr[:,:max_curves_per_path,:,0]-xmin)/(xmax-xmin) * viewbox_size
+        arr[:,:max_curves_per_path,:,1] = (arr[:,:max_curves_per_path,:,1]-ymin)/(ymax-ymin) * viewbox_size
 
     return arr, mask
 
@@ -160,34 +179,37 @@ def canonicalize_svg(svg_string: str, max_paths: int, max_curves_per_path: int,
                     viewbox_size: int=128):
     subpaths = svg_string_to_subpath_cubics(svg_string)
     tensor, mask = subpaths_to_tensor(subpaths, max_paths, max_curves_per_path, viewbox_size)
-    tensor = tensor / viewbox_size # Normalize to [0,1]
+    tensor[:,:-1] = tensor[:,:-1] / viewbox_size # Normalize curves to [0,1]
+    # The fill color row is already in [0,1]
     return tensor, mask
 
 def tensor_to_svg_string(tensor: np.ndarray, mask: np.ndarray,
                          width: int=128, height: int=128, stroke_width: int=1):
     """
-    Convert (max_paths, max_curves_per_path, 4,2) tensor back to SVG.
+    Convert (max_paths, max_curves_per_path+1, 4,2) tensor back to SVG.
     mask: indicates valid curves per path
     """
     svg_paths = []
-    max_paths, max_curves, _, _ = tensor.shape
-    tensor = tensor * width
+    max_paths, max_curves_plus1, _, _ = tensor.shape
+    max_curves = max_curves_plus1 - 1
+    tensor = tensor.copy()
+    tensor[:,:max_curves] = tensor[:,:max_curves] * width
 
     for i in range(max_paths):
-
-        indices = np.where(mask[i] > 0.5)[0]
+        indices = np.where(mask[i,:max_curves] > 0.5)[0]
         if len(indices) == 0:
             continue
 
-        # collect commands for this specific path
-        parts = []
+        # Get fill color from the last "curve"
+        fill_r = tensor[i, max_curves, 0, 0]
+        fill_g = tensor[i, max_curves, 1, 0]
+        fill_b = tensor[i, max_curves, 2, 0]
+        fill_hex = f"#{int(fill_r*255):02x}{int(fill_g*255):02x}{int(fill_b*255):02x}"
 
-        # Move to first curve start
+        parts = []
         first_j = indices[0]
         p0 = tensor[i, first_j, 0]
         parts.append(f"M {p0[0]:.2f} {p0[1]:.2f}")
-
-        # Emit curves
         for j in indices:
             p0 = tensor[i, j, 0]
             c1 = tensor[i, j, 1]
@@ -198,10 +220,9 @@ def tensor_to_svg_string(tensor: np.ndarray, mask: np.ndarray,
                 f"{c2[0]:.2f} {c2[1]:.2f}, "
                 f"{p3[0]:.2f} {p3[1]:.2f}"
             )
-
         d_i = " ".join(parts)
         svg_paths.append(
-            f'  <path d="{d_i}" fill="none" stroke="black" stroke-width="{stroke_width}"/>'
+            f'  <path d="{d_i}" fill="{fill_hex}" stroke="black" stroke-width="{stroke_width}"/>'
         )
 
     # wrap with full SVG
@@ -210,3 +231,15 @@ def tensor_to_svg_string(tensor: np.ndarray, mask: np.ndarray,
     svg += "\n</svg>"
 
     return svg
+
+def hex_to_rgb(hex_color: str):
+    """Convert #RRGGBB or #RGB to (r,g,b) in [0,1]"""
+    hex_color = hex_color.lstrip('#')
+    if len(hex_color) == 3:
+        hex_color = ''.join([c*2 for c in hex_color])
+    if len(hex_color) != 6:
+        return (0.0, 0.0, 0.0)
+    r = int(hex_color[0:2], 16) / 255.0
+    g = int(hex_color[2:4], 16) / 255.0
+    b = int(hex_color[4:6], 16) / 255.0
+    return (r, g, b)
